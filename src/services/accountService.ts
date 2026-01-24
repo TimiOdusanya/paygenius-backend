@@ -102,7 +102,7 @@ export class AccountService {
    */
   private static async generateAccountNumber(): Promise<string> {
     const prefix = 'UAE';
-    let accountNumber: string;
+    let accountNumber: string = '';
     let exists = true;
 
     while (exists) {

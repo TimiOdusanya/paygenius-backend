@@ -142,13 +142,13 @@ export class TransactionService {
     let reference: string;
     let exists = true;
 
-    while (exists) {
+    do {
       const timestamp = Date.now();
       const randomNum = Math.floor(Math.random() * 10000);
       reference = `${prefix}${timestamp}${randomNum}`;
       const transaction = await Transaction.findOne({ reference });
       exists = !!transaction;
-    }
+    } while (exists);
 
     return reference;
   }
