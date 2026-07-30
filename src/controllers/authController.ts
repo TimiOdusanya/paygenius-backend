@@ -49,7 +49,9 @@ export const sendPhoneVerification = async (req: Request, res: Response): Promis
 
     res.status(200).json({
       success: true,
-      message: 'Verification code sent successfully'
+      message: 'Verification code sent successfully',
+      // Expose code in non-production for easy testing (Twilio may not be configured)
+      ...(process.env.NODE_ENV !== 'production' && { devCode: code }),
     } as IAuthResponse);
 
   } catch (error) {
