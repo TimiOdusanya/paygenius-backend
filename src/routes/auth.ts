@@ -12,6 +12,7 @@ import {
 } from '../controllers/authController';
 import { authenticate } from '../middleware/auth';
 import {
+    validateLogin,
     validatePassword,
     validatePhoneNumber,
     validateVerificationCode
@@ -27,7 +28,7 @@ router.post('/verify-phone', validateVerificationCode, verifyPhoneNumber);
 router.post('/register', validatePhoneNumber, validatePassword, registerWithPhone);
 
 // Login routes
-router.post('/login', validatePhoneNumber, loginWithPhone);
+router.post('/login', validateLogin, loginWithPhone);
 router.post('/login-biometric', validatePhoneNumber, loginWithBiometric);
 
 // OAuth routes

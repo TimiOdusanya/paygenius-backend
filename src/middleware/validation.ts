@@ -31,6 +31,19 @@ export const validateVerificationCode = [
   handleValidationErrors
 ];
 
+export const validateLogin = [
+  body('identifier')
+    .optional()
+    .trim()
+    .isLength({ min: 1 })
+    .withMessage('Identifier must not be empty'),
+  // 'phoneNumber' is the legacy field; at least one of them must exist
+  body('password')
+    .isLength({ min: 6 })
+    .withMessage('Password must be at least 6 characters'),
+  handleValidationErrors,
+];
+
 export const validatePassword = [
   body('password')
     .isLength({ min: 8 })

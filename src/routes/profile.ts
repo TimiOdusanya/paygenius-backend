@@ -6,7 +6,8 @@ import {
   uploadSelfie,
   setupTransactionPin,
   enableBiometric,
-  getUserProfile
+  getUserProfile,
+  checkUsername,
 } from '../controllers/profileController';
 import {
   validateProfileSetup,
@@ -31,5 +32,6 @@ router.post('/enable-biometric', enableBiometric);
 
 // Get profile
 router.get('/', getUserProfile);
+router.get('/check-username', checkUsername);
 
 export default router;

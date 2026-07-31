@@ -351,3 +351,54 @@ export const getUserProfile = async (req: IAuthRequest, res: Response): Promise<
     } as IProfileResponse);
   }
 };
+// Check if a username is available
+export const checkUsername = async (req: IAuthRequest, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!._id;
+    const raw = String(req.query.username ?? '').trim().replace(/^@/, '');
+
+    if (!raw) {
+      res.status(400).json({
+        success: false,
+        message: 'Username is required',
+      });
+      return;
+    }
+
+    if (raw.length < 3 || raw.length > 30 || !/^[a-zA-Z0-9_]+$/.test(raw)) {
+      res.status(200).json({
+        success: true,
+        message: 'Invalid username format',
+        data: {
+          username: raw,
+          available: false,
+          reason: 'invalid',
+        },
+      });
+      return;
+    }
+
+    const existingUser = await User.findOne({
+      username: raw,
+      _id: { $ne: userId },
+    }).select('_id');
+
+    const available = !existingUser;
+
+    res.status(200).json({
+      success: true,
+      message: available ? 'Username is available' : 'Username already taken',
+      data: {
+        username: raw,
+        available,
+        reason: available ? 'available' : 'taken',
+      },
+    });
+  } catch (error) {
+    console.error('Check username error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+    });
+  }
+};

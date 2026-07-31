@@ -191,18 +191,38 @@ export const registerWithPhone = async (req: Request, res: Response): Promise<vo
   }
 };
 
-// Login with phone number and password
+// Login with phone number / email / username + password
 export const loginWithPhone = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { phoneNumber, password } = req.body;
+    // Accept either `identifier` (new) or `phoneNumber` (legacy) for backward compat
+    const raw: string = ((req.body.identifier ?? req.body.phoneNumber) as string | undefined ?? '').trim();
+    const { password } = req.body;
 
-    // Find user with password
-    const user = await User.findOne({ phoneNumber }).select('+password');
-    
+    if (!raw) {
+      res.status(400).json({ success: false, message: 'Phone number, email, or username is required' } as IAuthResponse);
+      return;
+    }
+
+    // Detect type and find user accordingly
+    let user = null;
+    if (raw.includes('@')) {
+      // Email
+      user = await User.findOne({ email: raw }).select('+password');
+    } else if (/^\+?[\d\s\-()]{7,}$/.test(raw)) {
+      // Phone number – try normalised form (digits only with +) first, then raw
+      const normalised = raw.replace(/[\s\-()]/g, '');
+      user = await User.findOne({
+        $or: [{ phoneNumber: normalised }, { phoneNumber: raw }],
+      }).select('+password');
+    } else {
+      // Username
+      user = await User.findOne({ username: raw }).select('+password');
+    }
+
     if (!user) {
       res.status(401).json({
         success: false,
-        message: 'Invalid user'
+        message: 'No account found with that phone number, email, or username',
       } as IAuthResponse);
       return;
     }
@@ -210,41 +230,32 @@ export const loginWithPhone = async (req: Request, res: Response): Promise<void>
     if (!user.password) {
       res.status(401).json({
         success: false,
-        message: 'Invalid password'
+        message: 'This account uses social login (Google/Apple). Please sign in with the original method.',
       } as IAuthResponse);
       return;
     }
 
-    // Check password
     const isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) {
       res.status(401).json({
         success: false,
-        message: 'Invalid password'
+        message: 'Incorrect password. Please try again.',
       } as IAuthResponse);
       return;
     }
 
-    // Generate tokens
     const token = generateToken(user);
     const refreshToken = generateRefreshToken(user);
 
     res.status(200).json({
       success: true,
       message: 'Login successful',
-      data: {
-        user: user.toJSON(),
-        token,
-        refreshToken
-      }
+      data: { user: user.toJSON(), token, refreshToken },
     } as IAuthResponse);
 
   } catch (error) {
-    console.error('Login with phone error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error'
-    } as IAuthResponse);
+    console.error('Login error:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' } as IAuthResponse);
   }
 };
 
@@ -504,40 +515,63 @@ export const googleAuth = async (req: Request, res: Response): Promise<void> => 
 // Apple OAuth login/register
 export const appleAuth = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { identityToken, user: appleUser } = req.body;
+    // Frontend sends { identityToken, fullName } where fullName is a string like "John Doe"
+    const { identityToken, fullName } = req.body;
 
-    // For now, we'll create a basic implementation
-    // In production, you should verify the Apple identity token
-    const appleId = identityToken; // This should be extracted from the token
+    if (!identityToken) {
+      res.status(400).json({ success: false, message: 'Identity token is required' } as IAuthResponse);
+      return;
+    }
 
-    // Check if user exists
-    let user = await User.findOne({ 
+    // Decode JWT payload to extract stable Apple user ID (sub) and email
+    // Note: in production you should also verify the token signature against Apple's public keys
+    let appleId: string;
+    let appleEmail: string | undefined;
+    try {
+      const payloadB64 = identityToken.split('.')[1];
+      const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf-8'));
+      appleId = payload.sub as string; // stable per-app user ID
+      appleEmail = payload.email as string | undefined;
+    } catch {
+      // Fallback: use a hash of the token as the identifier (avoids storing the full JWT)
+      const crypto = await import('crypto');
+      appleId = crypto.createHash('sha256').update(identityToken).digest('hex');
+    }
+
+    // Parse full name (Apple only provides it on first sign-in)
+    const nameParts = (fullName ?? '').trim().split(/\s+/).filter(Boolean);
+    const firstName = nameParts[0] ?? '';
+    const lastName = nameParts.slice(1).join(' ');
+
+    let user = await User.findOne({
       $or: [
         { appleId },
-        { email: appleUser?.email }
-      ]
+        ...(appleEmail ? [{ email: appleEmail }] : []),
+      ],
     });
 
+    const isNewUser = !user;
+
     if (user) {
-      // Update Apple ID if not set
+      // Link Apple ID if this is an email match with a pre-existing account
       if (!user.appleId) {
         user.appleId = appleId;
         await user.save();
       }
     } else {
-      // Create new user
       user = new User({
         appleId,
-        email: appleUser?.email,
-        firstName: appleUser?.name?.split(' ')[0] || '',
-        lastName: appleUser?.name?.split(' ').slice(1).join(' ') || '',
-        isEmailVerified: true,
-        isPhoneVerified: false
+        email: appleEmail,
+        firstName,
+        lastName,
+        isEmailVerified: !!appleEmail,
+        isPhoneVerified: false,
+        isProfileComplete: false,
       });
 
       await user.save();
 
-      // Create Paystack virtual account (wallet) for new Apple user
+      // Create wallet for new Apple user
       try {
         const userEmail = user.email || `${user._id}@paygenius.temp`;
         await WalletService.createWallet(user._id.toString(), {
@@ -555,32 +589,24 @@ export const appleAuth = async (req: Request, res: Response): Promise<void> => {
       }
     }
 
-    // Generate tokens
     const token = generateToken(user);
     const refreshToken = generateRefreshToken(user);
-
-    // Fetch wallet if it exists
     const wallet = await WalletService.getWalletByUserId(user._id.toString());
 
     res.status(200).json({
       success: true,
-      message: 'Apple authentication successful',
+      message: isNewUser ? 'Account created successfully with Apple' : 'Apple authentication successful',
       data: {
-        user: {
-          ...user.toJSON(),
-          wallet: wallet ? (wallet.toJSON() as any) : null
-        },
+        user: { ...user.toJSON(), wallet: wallet ? (wallet.toJSON() as any) : null },
         token,
-        refreshToken
-      }
+        refreshToken,
+        isNewUser,
+      },
     } as IAuthResponse);
 
   } catch (error) {
     console.error('Apple auth error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Invalid Apple token'
-    } as IAuthResponse);
+    res.status(500).json({ success: false, message: 'Apple authentication failed' } as IAuthResponse);
   }
 };
 
