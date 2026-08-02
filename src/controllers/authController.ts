@@ -191,6 +191,34 @@ export const registerWithPhone = async (req: Request, res: Response): Promise<vo
   }
 };
 
+/**
+ * Normalise a phone-number string to E.164 format (+XXXXXXXXXXX).
+ * Handles common Nigerian entry patterns so users never have to think
+ * about country codes:
+ *   08146414524  →  +2348146414524  (11-digit local with leading 0)
+ *   8146414524   →  +2348146414524  (10-digit local, no leading 0)
+ *   +2348146414524 → +2348146414524 (already normalised)
+ *   2348146414524  → +2348146414524 (international without +)
+ */
+function normalisePhone(raw: string): string {
+  // Strip spaces, dashes, parentheses
+  let digits = raw.replace(/[\s\-()\+]/g, '');
+
+  // Nigerian local format: 11 digits starting with 0  →  +234XXXXXXXXXX
+  if (/^0\d{10}$/.test(digits)) return `+234${digits.slice(1)}`;
+
+  // 10 digits (no leading 0, no country code) → assume Nigeria
+  if (/^\d{10}$/.test(digits)) return `+234${digits}`;
+
+  // 13 digits starting with 234 (no +) → add +
+  if (/^234\d{10}$/.test(digits)) return `+${digits}`;
+
+  // Anything else: add + if it's purely numeric
+  if (/^\d{7,15}$/.test(digits)) return `+${digits}`;
+
+  return raw; // Not a phone – return as-is (email / username caller handles this)
+}
+
 // Login with phone number / email / username + password
 export const loginWithPhone = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -208,9 +236,10 @@ export const loginWithPhone = async (req: Request, res: Response): Promise<void>
     if (raw.includes('@')) {
       // Email
       user = await User.findOne({ email: raw }).select('+password');
-    } else if (/^\+?[\d\s\-()]{7,}$/.test(raw)) {
-      // Phone number – try normalised form (digits only with +) first, then raw
-      const normalised = raw.replace(/[\s\-()]/g, '');
+    } else if (/^[\+\d][\d\s\-()]{6,}$/.test(raw) || /^0\d{9,}$/.test(raw)) {
+      // Looks like a phone – normalise to E.164 then search.
+      // Also try the raw value so edge-cases stored in non-standard form still match.
+      const normalised = normalisePhone(raw);
       user = await User.findOne({
         $or: [{ phoneNumber: normalised }, { phoneNumber: raw }],
       }).select('+password');
