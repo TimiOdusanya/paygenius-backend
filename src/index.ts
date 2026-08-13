@@ -1,3 +1,4 @@
+import http from 'http';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -6,6 +7,7 @@ import dotenv from 'dotenv';
 import connectDB from './db/db';
 import logger from './lib/log/winston.log';
 import httpLogger from './lib/log/morgan.log';
+import { initSocket } from './services/socketService';
 
 // Import routes
 import authRoutes from './routes/auth';
@@ -14,11 +16,21 @@ import homeRoutes from './routes/home';
 import budgetRoutes from './routes/budget';
 import walletRoutes from './routes/wallet';
 import paystackRoutes from './routes/paystack';
+import genieRoutes from './routes/genie';
+import savingsRoutes from './routes/savings';
+import loanRoutes from './routes/loans';
+import billRoutes from './routes/bills';
+import verifyRoutes from './routes/verify';
+import notificationRoutes from './routes/notifications';
+import settingsRoutes from './routes/settings';
+import supportRoutes from './routes/support';
+import transferRoutes from './routes/transfer';
 
 // Load environment variables
 dotenv.config();
 
 const app = express();
+const server = http.createServer(app);
 const PORT = process.env.PORT || 5000;
 
 // Security middleware
@@ -97,8 +109,8 @@ app.post('/api/paystack/webhook', express.raw({ type: 'application/json' }), asy
 });
 
 // Body parsing middleware
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '12mb' }));
+app.use(express.urlencoded({ extended: true, limit: '12mb' }));
 
 // Disable ETags for dynamic API endpoints (prevents 304 Not Modified)
 // ETags are useful for static resources but problematic for dynamic API data
@@ -132,6 +144,15 @@ app.use('/api/profile', profileRoutes);
 app.use('/api/home', homeRoutes);
 app.use('/api/budget', budgetRoutes);
 app.use('/api/wallet', walletRoutes);
+app.use('/api/genie', genieRoutes);
+app.use('/api/savings', savingsRoutes);
+app.use('/api/loans', loanRoutes);
+app.use('/api/bills', billRoutes);
+app.use('/api/verify', verifyRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/settings', settingsRoutes);
+app.use('/api/support', supportRoutes);
+app.use('/api/transfers', transferRoutes);
 
 // 404 handler
 app.use('*', (req, res) => {
@@ -154,7 +175,9 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 
 const port = PORT;
 
-app.listen(port, async () => {
+initSocket(server);
+
+server.listen(port, async () => {
   logger.info(`🚀 PayGenius API server running on port ${port}`);
   logger.info(`📱 Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:8081'}`);
   logger.info(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);

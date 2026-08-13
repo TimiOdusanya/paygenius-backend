@@ -36,6 +36,13 @@ export interface IUser {
   biometricEnabled: boolean;
   googleId?: string;
   appleId?: string;
+  referralCode?: string;
+  referredBy?: string;
+  dailySpendLimit?: number;
+  dailyTransferLimit?: number;
+  faceIdEnabled?: boolean;
+  deletedAt?: Date;
+  deactivatedAt?: Date;
   wallet?: IWallet; // Virtual account wallet
   createdAt?: Date;
   updatedAt?: Date;
@@ -76,6 +83,13 @@ export interface IUserDocument {
   biometricEnabled: boolean;
   googleId?: string;
   appleId?: string;
+  referralCode?: string;
+  referredBy?: any;
+  dailySpendLimit?: number;
+  dailyTransferLimit?: number;
+  faceIdEnabled?: boolean;
+  deletedAt?: Date;
+  deactivatedAt?: Date;
   createdAt?: Date;
   updatedAt?: Date;
   toJSON(): IUser;

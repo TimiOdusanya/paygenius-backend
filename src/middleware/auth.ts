@@ -28,6 +28,22 @@ export const authenticate = async (req: IAuthRequest, res: Response, next: NextF
       return;
     }
 
+    if ((user as any).deletedAt) {
+      res.status(401).json({
+        success: false,
+        message: 'Account has been deleted'
+      });
+      return;
+    }
+
+    if ((user as any).deactivatedAt) {
+      res.status(403).json({
+        success: false,
+        message: 'This account is deactivated. Contact support to restore it.'
+      });
+      return;
+    }
+
     // Fetch wallet if it exists
     const { WalletService } = await import('../services/walletService');
     const wallet = await WalletService.getWalletByUserId(decoded.userId);

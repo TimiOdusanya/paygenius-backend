@@ -154,6 +154,37 @@ const UserSchema = new Schema<IUserDocument>({
     type: String,
     unique: true,
     sparse: true
+  },
+  referralCode: {
+    type: String,
+    unique: true,
+    sparse: true,
+    trim: true,
+    lowercase: true
+  },
+  referredBy: {
+    type: Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  dailySpendLimit: {
+    type: Number,
+    default: 500000,
+    min: 0
+  },
+  dailyTransferLimit: {
+    type: Number,
+    default: 200000,
+    min: 0
+  },
+  faceIdEnabled: {
+    type: Boolean,
+    default: false
+  },
+  deletedAt: {
+    type: Date
+  },
+  deactivatedAt: {
+    type: Date
   }
 }, {
   timestamps: true,

@@ -325,6 +325,85 @@ export const enableBiometric = async (req: IAuthRequest, res: Response): Promise
 };
 
 // Get user profile
+export const updateProfile = async (req: IAuthRequest, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!._id;
+    const { username, profilePicture } = req.body as {
+      username?: string;
+      profilePicture?: string;
+    };
+
+    const updates: Record<string, string> = {};
+
+    if (typeof username === 'string') {
+      const normalized = username.trim().replace(/^@/, '');
+      if (normalized.length < 3 || normalized.length > 30) {
+        res.status(400).json({
+          success: false,
+          message: 'Username must be between 3 and 30 characters',
+        } as IProfileResponse);
+        return;
+      }
+      if (!/^[a-zA-Z0-9_]+$/.test(normalized)) {
+        res.status(400).json({
+          success: false,
+          message: 'Username can only contain letters, numbers, and underscores',
+        } as IProfileResponse);
+        return;
+      }
+      const existingUser = await User.findOne({
+        username: normalized,
+        _id: { $ne: userId },
+      });
+      if (existingUser) {
+        res.status(400).json({
+          success: false,
+          message: 'Username already taken',
+        } as IProfileResponse);
+        return;
+      }
+      updates.username = normalized;
+    }
+
+    if (typeof profilePicture === 'string' && profilePicture.trim()) {
+      updates.profilePicture = profilePicture.trim();
+    }
+
+    if (Object.keys(updates).length === 0) {
+      res.status(400).json({
+        success: false,
+        message: 'No profile fields to update',
+      } as IProfileResponse);
+      return;
+    }
+
+    const user = await User.findByIdAndUpdate(userId, updates, {
+      new: true,
+      runValidators: true,
+    });
+
+    if (!user) {
+      res.status(404).json({
+        success: false,
+        message: 'User not found',
+      } as IProfileResponse);
+      return;
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Profile updated successfully',
+      data: { user: user.toJSON() },
+    } as IProfileResponse);
+  } catch (error) {
+    console.error('Update profile error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+    } as IProfileResponse);
+  }
+};
+
 export const getUserProfile = async (req: IAuthRequest, res: Response): Promise<void> => {
   try {
     const user = req.user;

@@ -2,6 +2,7 @@ import { NextFunction, Request, Response } from 'express';
 import PhoneVerification from '../models/PhoneVerification';
 import User from '../models/User';
 import { exchangeAuthCodeForTokens, verifyGoogleToken } from '../services/googleAuthService';
+import { verifyAppleToken } from '../services/appleAuthService';
 import { sendVerificationCode, sendWelcomeMessage } from '../services/smsService';
 import { WalletService } from '../services/walletService';
 import logger from '../lib/log/winston.log';
@@ -256,6 +257,22 @@ export const loginWithPhone = async (req: Request, res: Response): Promise<void>
       return;
     }
 
+    if ((user as any).deletedAt) {
+      res.status(401).json({
+        success: false,
+        message: 'This account has been deleted',
+      } as IAuthResponse);
+      return;
+    }
+
+    if ((user as any).deactivatedAt) {
+      res.status(403).json({
+        success: false,
+        message: 'This account is deactivated. Contact support to restore it.',
+      } as IAuthResponse);
+      return;
+    }
+
     if (!user.password) {
       res.status(401).json({
         success: false,
@@ -308,6 +325,16 @@ export const loginWithBiometric = async (req: Request, res: Response): Promise<v
       res.status(401).json({
         success: false,
         message: 'User not found'
+      } as IAuthResponse);
+      return;
+    }
+
+    if ((user as any).deletedAt || (user as any).deactivatedAt) {
+      res.status(403).json({
+        success: false,
+        message: (user as any).deletedAt
+          ? 'This account has been deleted'
+          : 'This account is deactivated. Contact support to restore it.',
       } as IAuthResponse);
       return;
     }
@@ -428,6 +455,16 @@ export const googleAuthCode = async (req: Request, res: Response): Promise<void>
       console.log('✅ Created new user from Google account');
     }
 
+    if ((user as any).deletedAt || (user as any).deactivatedAt) {
+      res.status(403).json({
+        success: false,
+        message: (user as any).deletedAt
+          ? 'This account has been deleted'
+          : 'This account is deactivated. Contact support to restore it.',
+      } as IAuthResponse);
+      return;
+    }
+
     // Generate tokens
     const token = generateToken(user);
     const refreshToken = generateRefreshToken(user);
@@ -512,6 +549,16 @@ export const googleAuth = async (req: Request, res: Response): Promise<void> => 
       }
     }
 
+    if ((user as any).deletedAt || (user as any).deactivatedAt) {
+      res.status(403).json({
+        success: false,
+        message: (user as any).deletedAt
+          ? 'This account has been deleted'
+          : 'This account is deactivated. Contact support to restore it.',
+      } as IAuthResponse);
+      return;
+    }
+
     // Generate tokens
     const token = generateToken(user);
     const refreshToken = generateRefreshToken(user);
@@ -544,31 +591,24 @@ export const googleAuth = async (req: Request, res: Response): Promise<void> => 
 // Apple OAuth login/register
 export const appleAuth = async (req: Request, res: Response): Promise<void> => {
   try {
-    // Frontend sends { identityToken, fullName } where fullName is a string like "John Doe"
-    const { identityToken, fullName } = req.body;
+    // Frontend sends { identityToken, fullName } and may include user metadata on first sign-in
+    const { identityToken, fullName, user: appleUser } = req.body;
 
     if (!identityToken) {
-      res.status(400).json({ success: false, message: 'Identity token is required' } as IAuthResponse);
+      res.status(400).json({
+        success: false,
+        message: 'Apple identity token is required'
+      } as IAuthResponse);
       return;
     }
 
-    // Decode JWT payload to extract stable Apple user ID (sub) and email
-    // Note: in production you should also verify the token signature against Apple's public keys
-    let appleId: string;
-    let appleEmail: string | undefined;
-    try {
-      const payloadB64 = identityToken.split('.')[1];
-      const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf-8'));
-      appleId = payload.sub as string; // stable per-app user ID
-      appleEmail = payload.email as string | undefined;
-    } catch {
-      // Fallback: use a hash of the token as the identifier (avoids storing the full JWT)
-      const crypto = await import('crypto');
-      appleId = crypto.createHash('sha256').update(identityToken).digest('hex');
-    }
+    const appleAccount = verifyAppleToken(identityToken);
+    const appleId = appleAccount.id;
+    const appleEmail = appleAccount.email || appleUser?.email;
 
     // Parse full name (Apple only provides it on first sign-in)
-    const nameParts = (fullName ?? '').trim().split(/\s+/).filter(Boolean);
+    const displayName = (fullName ?? appleUser?.name ?? '').trim();
+    const nameParts = displayName.split(/\s+/).filter(Boolean);
     const firstName = nameParts[0] ?? '';
     const lastName = nameParts.slice(1).join(' ');
 
@@ -616,6 +656,16 @@ export const appleAuth = async (req: Request, res: Response): Promise<void> => {
           userId: user._id.toString(),
         });
       }
+    }
+
+    if ((user as any).deletedAt || (user as any).deactivatedAt) {
+      res.status(403).json({
+        success: false,
+        message: (user as any).deletedAt
+          ? 'This account has been deleted'
+          : 'This account is deactivated. Contact support to restore it.',
+      } as IAuthResponse);
+      return;
     }
 
     const token = generateToken(user);

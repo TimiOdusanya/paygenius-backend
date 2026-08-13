@@ -10,6 +10,8 @@ const router = express.Router();
  * @access  Private
  */
 router.get('/dashboard', authenticate, HomeController.getDashboard);
+router.get('/transactions', authenticate, HomeController.getTransactions);
+router.get('/analytics', authenticate, HomeController.getAnalytics);
 
 export default router;
 

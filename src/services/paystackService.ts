@@ -222,6 +222,190 @@ class PaystackService {
    * @param accountNumber - The virtual account number
    * @returns Account details
    */
+  async listBanks(country = 'nigeria'): Promise<
+    Array<{ name: string; code: string; slug: string; active: boolean }>
+  > {
+    try {
+      const response = await axios.get(`${this.config.baseUrl}/bank`, {
+        params: { country, perPage: 100 },
+        headers: {
+          Authorization: `Bearer ${this.config.secretKey}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      if (!response.data.status) {
+        throw new Error(response.data.message || 'Failed to list banks');
+      }
+      return (response.data.data ?? [])
+        .filter((bank: any) => bank.active && !bank.is_deleted)
+        .map((bank: any) => ({
+          name: bank.name,
+          code: bank.code,
+          slug: bank.slug,
+          active: Boolean(bank.active),
+        }));
+    } catch (error: any) {
+      logger.error('Error listing banks:', { error: error.message, response: error.response?.data });
+      throw new Error(error.response?.data?.message || 'Failed to list banks');
+    }
+  }
+
+  async resolveAccount(accountNumber: string, bankCode: string): Promise<{
+    accountNumber: string;
+    accountName: string;
+  }> {
+    try {
+      const response = await axios.get(`${this.config.baseUrl}/bank/resolve`, {
+        params: { account_number: accountNumber, bank_code: bankCode },
+        headers: {
+          Authorization: `Bearer ${this.config.secretKey}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      if (!response.data.status) {
+        throw Object.assign(new Error(response.data.message || 'Account could not be resolved'), {
+          status: 400,
+        });
+      }
+      return {
+        accountNumber: response.data.data.account_number,
+        accountName: response.data.data.account_name,
+      };
+    } catch (error: any) {
+      logger.error('Error resolving account:', {
+        error: error.message,
+        response: error.response?.data,
+      });
+      throw Object.assign(
+        new Error(error.response?.data?.message || 'This account number is not valid for the selected bank'),
+        { status: error.response?.status === 400 ? 400 : 502 }
+      );
+    }
+  }
+
+  async resolveCardBin(bin: string): Promise<{
+    bin: string;
+    brand: string;
+    cardType: string;
+    bank: string;
+    countryCode: string;
+  }> {
+    try {
+      const response = await axios.get(`${this.config.baseUrl}/decision/bin/${bin}`, {
+        headers: {
+          Authorization: `Bearer ${this.config.secretKey}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      if (!response.data.status) {
+        throw Object.assign(new Error(response.data.message || 'Card could not be verified'), {
+          status: 400,
+        });
+      }
+      const data = response.data.data;
+      return {
+        bin: data.bin,
+        brand: data.brand,
+        cardType: data.card_type,
+        bank: data.bank,
+        countryCode: data.country_code,
+      };
+    } catch (error: any) {
+      logger.error('Error resolving card BIN:', {
+        error: error.message,
+        response: error.response?.data,
+      });
+      throw Object.assign(
+        new Error(error.response?.data?.message || 'This card number is not valid'),
+        { status: 400 }
+      );
+    }
+  }
+
+  async createTransferRecipient(input: {
+    name: string;
+    accountNumber: string;
+    bankCode: string;
+  }): Promise<{ recipientCode: string; name: string }> {
+    try {
+      const response = await axios.post(
+        `${this.config.baseUrl}/transferrecipient`,
+        {
+          type: 'nuban',
+          name: input.name,
+          account_number: input.accountNumber,
+          bank_code: input.bankCode,
+          currency: 'NGN',
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${this.config.secretKey}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+      if (!response.data.status) {
+        throw new Error(response.data.message || 'Could not create transfer recipient');
+      }
+      return {
+        recipientCode: response.data.data.recipient_code,
+        name: response.data.data.name || input.name,
+      };
+    } catch (error: any) {
+      logger.error('Error creating transfer recipient:', {
+        error: error.message,
+        response: error.response?.data,
+      });
+      throw Object.assign(
+        new Error(error.response?.data?.message || 'Could not create a bank recipient'),
+        { status: error.response?.status === 400 ? 400 : 502 }
+      );
+    }
+  }
+
+  async initiateTransfer(input: {
+    amount: number;
+    recipientCode: string;
+    reason?: string;
+    reference: string;
+  }): Promise<{ reference: string; transferCode?: string; status: string }> {
+    try {
+      const response = await axios.post(
+        `${this.config.baseUrl}/transfer`,
+        {
+          source: 'balance',
+          amount: Math.round(input.amount * 100),
+          recipient: input.recipientCode,
+          reason: input.reason || 'PayGenius transfer',
+          reference: input.reference,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${this.config.secretKey}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+      if (!response.data.status) {
+        throw new Error(response.data.message || 'Transfer could not be initiated');
+      }
+      return {
+        reference: response.data.data.reference || input.reference,
+        transferCode: response.data.data.transfer_code,
+        status: response.data.data.status || 'success',
+      };
+    } catch (error: any) {
+      logger.error('Error initiating Paystack transfer:', {
+        error: error.message,
+        response: error.response?.data,
+      });
+      throw Object.assign(
+        new Error(error.response?.data?.message || 'Bank transfer could not be completed'),
+        { status: error.response?.status === 400 ? 400 : 502 }
+      );
+    }
+  }
+
   async getDedicatedAccount(accountNumber: string): Promise<any> {
     try {
       const response = await axios.get(

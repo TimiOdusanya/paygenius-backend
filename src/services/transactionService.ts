@@ -225,5 +225,87 @@ export class TransactionService {
       throw error;
     }
   }
+
+  /**
+   * Expense analytics for a calendar month: weekly totals + category breakdown.
+   */
+  static async getExpenseAnalytics(
+    userId: string,
+    month: number,
+    year: number,
+    accountId?: string
+  ): Promise<{
+    totalExpenses: number;
+    previousMonthExpenses: number;
+    changePercent: number;
+    weeks: { week: number; total: number; categories: Record<string, number> }[];
+    categories: { name: string; amount: number }[];
+  }> {
+    const start = new Date(year, month, 1);
+    const end = new Date(year, month + 1, 0, 23, 59, 59, 999);
+    const prevStart = new Date(year, month - 1, 1);
+    const prevEnd = new Date(year, month, 0, 23, 59, 59, 999);
+
+    const base: any = { userId, status: 'COMPLETED', type: 'DEBIT' };
+    if (accountId) base.accountId = accountId;
+
+    const [current, previous] = await Promise.all([
+      Transaction.find({ ...base, createdAt: { $gte: start, $lte: end } }).lean(),
+      Transaction.find({ ...base, createdAt: { $gte: prevStart, $lte: prevEnd } }).lean()
+    ]);
+
+    const normalizeCategory = (raw?: string): string => {
+      const key = (raw || 'OTHERS').toUpperCase();
+      if (key === 'FOOD') return 'Food';
+      if (key === 'DATA') return 'Data';
+      if (key === 'GROCERIES' || key === 'GROCERY') return 'Groceries';
+      if (key === 'FUEL' || key === 'TRANSPORTATION' || key === 'LOGISTICS') return 'Logistics';
+      return 'Others';
+    };
+
+    const weekOf = (date: Date): number => {
+      const day = date.getDate();
+      if (day <= 7) return 1;
+      if (day <= 14) return 2;
+      if (day <= 21) return 3;
+      return 4;
+    };
+
+    const weeks = [1, 2, 3, 4].map((week) => ({
+      week,
+      total: 0,
+      categories: {} as Record<string, number>
+    }));
+
+    const categoryTotals: Record<string, number> = {};
+    let totalExpenses = 0;
+
+    for (const tx of current) {
+      const amount = tx.amount || 0;
+      const cat = normalizeCategory(tx.category);
+      const week = weekOf(new Date(tx.createdAt as Date));
+      totalExpenses += amount;
+      categoryTotals[cat] = (categoryTotals[cat] || 0) + amount;
+      const bucket = weeks[week - 1];
+      bucket.total += amount;
+      bucket.categories[cat] = (bucket.categories[cat] || 0) + amount;
+    }
+
+    const previousMonthExpenses = previous.reduce((sum, tx) => sum + (tx.amount || 0), 0);
+    const changePercent =
+      previousMonthExpenses === 0
+        ? totalExpenses > 0 ? 100 : 0
+        : Math.round(((totalExpenses - previousMonthExpenses) / previousMonthExpenses) * 100);
+
+    return {
+      totalExpenses,
+      previousMonthExpenses,
+      changePercent,
+      weeks,
+      categories: Object.entries(categoryTotals)
+        .map(([name, amount]) => ({ name, amount }))
+        .sort((a, b) => b.amount - a.amount)
+    };
+  }
 }
 

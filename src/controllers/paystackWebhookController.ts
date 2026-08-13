@@ -121,12 +121,28 @@ async function handleChargeSuccess(data: any): Promise<void> {
       return;
     }
 
+    const amountInNaira = amount / 100;
     logger.info('Wallet credited successfully via charge.success webhook', {
       accountNumber,
-      amount: amount / 100,
+      amount: amountInNaira,
       newBalance: wallet.totalBalance,
       reference: data.reference,
     });
+
+    try {
+      const { NotificationService } = await import('../services/notificationService');
+      await NotificationService.createAndDispatch(wallet.userId.toString(), {
+        type: 'TRANSACTION',
+        title: 'Wallet funded',
+        body: `Your wallet was credited with ₦${amountInNaira}`,
+        data: { reference: data.reference, amount: amountInNaira },
+      });
+    } catch (notifyError: any) {
+      logger.error('Wallet funded notification failed', {
+        error: notifyError?.message,
+        userId: wallet.userId?.toString?.(),
+      });
+    }
   } catch (error: any) {
     logger.error('Error handling charge.success:', {
       error: error.message,

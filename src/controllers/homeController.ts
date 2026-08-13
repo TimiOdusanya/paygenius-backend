@@ -88,5 +88,95 @@ export class HomeController {
       } as IHomeDashboardResponse);
     }
   }
+
+  /**
+   * Get paginated transactions for a calendar month
+   * GET /api/home/transactions?month=7&year=2025
+   */
+  static async getTransactions(req: IAuthRequest, res: Response): Promise<void> {
+    try {
+      const userId = req.user?._id;
+      if (!userId) {
+        res.status(401).json({ success: false, message: 'Unauthorized. Please login.', error: 'UNAUTHORIZED' });
+        return;
+      }
+
+      const now = new Date();
+      const month = req.query.month ? Number(req.query.month) : now.getMonth();
+      const year = req.query.year ? Number(req.query.year) : now.getFullYear();
+      const startDate = new Date(year, month, 1);
+      const endDate = new Date(year, month + 1, 0, 23, 59, 59, 999);
+
+      const { transactions, total } = await TransactionService.getTransactions(userId.toString(), {
+        startDate,
+        endDate,
+        limit: 100
+      });
+
+      const summary = await TransactionService.getTransactionSummary(
+        userId.toString(),
+        undefined,
+        startDate,
+        endDate
+      );
+
+      res.status(200).json({
+        success: true,
+        message: 'Transactions retrieved successfully',
+        data: {
+          transactions: transactions.map((t) => t),
+          total,
+          month,
+          year,
+          amountIn: summary.totalIncome,
+          amountOut: summary.totalExpenses
+        }
+      });
+    } catch (error: any) {
+      logger.error('Error getting transactions:', error);
+      res.status(500).json({
+        success: false,
+        message: error.message || 'Failed to retrieve transactions',
+        error: 'INTERNAL_SERVER_ERROR'
+      });
+    }
+  }
+
+  /**
+   * Expense log analytics for a calendar month
+   * GET /api/home/analytics?month=7&year=2025
+   */
+  static async getAnalytics(req: IAuthRequest, res: Response): Promise<void> {
+    try {
+      const userId = req.user?._id;
+      if (!userId) {
+        res.status(401).json({ success: false, message: 'Unauthorized. Please login.', error: 'UNAUTHORIZED' });
+        return;
+      }
+
+      const now = new Date();
+      const month = req.query.month ? Number(req.query.month) : now.getMonth();
+      const year = req.query.year ? Number(req.query.year) : now.getFullYear();
+
+      const analytics = await TransactionService.getExpenseAnalytics(
+        userId.toString(),
+        month,
+        year
+      );
+
+      res.status(200).json({
+        success: true,
+        message: 'Analytics retrieved successfully',
+        data: { month, year, ...analytics }
+      });
+    } catch (error: any) {
+      logger.error('Error getting analytics:', error);
+      res.status(500).json({
+        success: false,
+        message: error.message || 'Failed to retrieve analytics',
+        error: 'INTERNAL_SERVER_ERROR'
+      });
+    }
+  }
 }
 

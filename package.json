@@ -34,6 +34,7 @@
     "morgan": "^1.10.0",
     "node-mailjet": "^6.0.9",
     "paystack": "^2.0.1",
+    "socket.io": "^4.8.3",
     "twilio": "^4.19.0",
     "winston": "^3.18.3"
   },
